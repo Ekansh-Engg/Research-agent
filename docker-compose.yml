@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app/api
+      - ./core:/app/core
+      - ./services:/app/services
+      - ./repositories:/app/repositories
+      - ./schemas:/app/schemas
+      - ./workers:/app/workers
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir api

@@ -26,3 +26,18 @@ async def slow_async():
 @app.get("/config-check")
 async def config_check(settings: Settings = Depends(get_settings)):
     return {"app_name": settings.app_name, "environment": settings.environment}
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.db import get_db
+from repositories.user_repository import create_user, get_user_by_email
+
+
+@app.post("/test-create-user")
+async def test_create_user(email: str, db: AsyncSession = Depends(get_db)):
+    existing = await get_user_by_email(db, email)
+    if existing:
+        return {"created": False, "id": str(existing.id), "email": existing.email}
+
+    user = await create_user(db, email)
+    return {"created": True, "id": str(user.id), "email": user.email}

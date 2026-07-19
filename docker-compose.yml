@@ -10,4 +10,28 @@ services:
       - ./repositories:/app/repositories
       - ./schemas:/app/schemas
       - ./workers:/app/workers
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir api --reload-dir core --reload-dir repositories --reload-dir services --reload-dir schemas --reload-dir workers
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/research_agent
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=research_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

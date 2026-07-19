@@ -170,6 +170,21 @@ Pushed to 60 concurrent requests and found the real boundary: sync routes split 
 
 \*\*Why dependency injection over direct imports:\*\* proved this concretely with a test, not just by asserting it. A route depending on `Depends(get\_settings)` can have that dependency swapped for a fake `Settings` object in a test (`app.dependency\_overrides\[get\_settings] = fake\_settings`) without touching any route code. A route that directly imported `settings` from `core.config` would have no clean way to substitute it in a test.
 
+### Day 3 — PostgreSQL + Async SQLAlchemy + Alembic Migrations
+
+Added Postgres to the stack, wired up async SQLAlchemy 2.0, and got Alembic generating real migrations against live models — no manual schema hand-writing.
+
+**Docker Compose healthcheck prevents a real race condition.** Used `depends_on: condition: service_healthy` (not plain `depends_on`) so the `api` container waits for Postgres to actually pass `pg_isready`, not just for the container to start. Confirmed this works — the logs show `api-1` only begins startup after `Container research-agent-db-1 Healthy` appears.
+
+**Named volume (`pgdata`) proven to persist data across restarts.** After a `docker compose down` and `up`, Postgres logged `PostgreSQL Database directory appears to contain a database; Skipping initialization` — confirming the `users` table and its data survived the restart, as intended.
+
+**Used SQLAlchemy 2.0's typed declarative style** (`Mapped[...]`, `mapped_column(...)`) instead of the older `Column()` syntax — gives real type-checking on model attributes instead of `Any`.
+
+**Alembic configured to use the app's actual settings, not a separate hardcoded URL.** Overrode `config.set_main_option("sqlalchemy.url", settings.database_url)` in `migrations/env.py` right after `config = context.config`, so `.env` stays the single source of truth for the connection string instead of duplicating it inside `alembic.ini`.
+
+**Bug — reload scope didn't cover new folders as the project grew.** Day 1's `--reload-dir api` scoping only watched the `api/` folder. Adding `repositories/user_repository.py` didn't trigger a reload, and worse, the container's next restart threw `ModuleNotFoundError: No module named 'repositories.user_repository'` — looked like a missing-file bug at first, but the file was there; uvicorn just hadn't been told to watch that directory. Fixed by adding a `--reload-dir` flag per source folder (`api`, `core`, `repositories`, `services`, `schemas`, `workers`) in the Compose `command`.
+
+**Proved the full stack round-trip, not just that it "should" work.** Built a throwaway `/test-create-user` route and called it twice with the same email — first call returned `"created": true` with a fresh UUID, second call returned `"created": false` with the *same* UUID, confirming `get_user_by_email` correctly deduplicated instead of inserting a second row. Verified independently via `docker exec ... psql -c "\dt"` that the `users` table (and Alembic's own `alembic_version` bookkeeping table) genuinely exist in Postgres, rather than just trusting Alembic's own success message.
 
 
 \## Roadmap
@@ -180,7 +195,7 @@ Pushed to 60 concurrent requests and found the real boundary: sync routes split 
 
 \- \[x] Day 2 — Async patterns, Pydantic Settings, dependency injection
 
-\- \[ ] Day 3 — PostgreSQL + async SQLAlchemy + Alembic
+\- \[x] Day 3 — PostgreSQL + async SQLAlchemy + Alembic
 
 \- \[ ] Day 4 — Full schema design
 

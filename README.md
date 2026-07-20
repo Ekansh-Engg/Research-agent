@@ -186,6 +186,19 @@ Added Postgres to the stack, wired up async SQLAlchemy 2.0, and got Alembic gene
 
 **Proved the full stack round-trip, not just that it "should" work.** Built a throwaway `/test-create-user` route and called it twice with the same email — first call returned `"created": true` with a fresh UUID, second call returned `"created": false` with the *same* UUID, confirming `get_user_by_email` correctly deduplicated instead of inserting a second row. Verified independently via `docker exec ... psql -c "\dt"` that the `users` table (and Alembic's own `alembic_version` bookkeeping table) genuinely exist in Postgres, rather than just trusting Alembic's own success message.
 
+### Day 4 — Full Schema Design (AgentRun, AgentStep, Report, AuditLog)
+
+Built out the complete data model the rest of the project writes to — the tables that will hold every agent plan, tool call, and synthesized report once orchestration comes online in Week 3.
+
+**Key design decisions, not just defaults:**
+- `agent_steps.input`/`output` use JSON columns rather than fixed columns, since different tools (web search, SQL, RAG) return fundamentally different shapes — forcing a rigid schema here would mean either a table per tool type or losing data.
+- `AgentRun.status` uses a real Postgres enum (`RunStatus`), not a free-text string — the database itself rejects invalid states, not just app-level validation.
+- Every child table has an explicit `ondelete="CASCADE"` foreign key — deleting an `AgentRun` correctly cascades to delete its `AgentStep`s and `Report`, since a step or report is meaningless without its parent run.
+- `AgentRun` ↔ `Report` is enforced as one-to-one at the database level via `unique=True` on `Report.run_id`, not just assumed in application code.
+
+**Verified everything independently instead of trusting tool output.** After applying the migration, ran `\d <table>` in `psql` for each new table individually — not just `\dt` — to confirm columns, indexes, and foreign-key cascade rules actually landed as designed. Specifically confirmed `agent_steps.run_id` has both an index (`ix_agent_steps_run_id`, needed since the live trace UI will constantly query "all steps for a run") and the `ON DELETE CASCADE` foreign key.
+
+**False alarm caught and resolved — worth documenting because of how convincing it looked.** Early `\dt` output through `docker exec` appeared to be missing the `users` and `reports` tables entirely — looked like a serious data-loss bug. Turned out to be `psql`'s interactive pager silently truncating output mid-list (`--More--`), not an actual problem. Confirmed both tables were fully intact via targeted `\d users` / `\d reports` checks and `alembic history` (which showed a clean, linear, unbroken migration chain). Fixed the pager truncation with `\pset pager off` for future checks. Genuinely useful lesson: verify with a targeted query before concluding data is missing — an output-rendering quirk can look identical to real corruption if you don't dig one level deeper.
 
 \## Roadmap
 
@@ -197,7 +210,7 @@ Added Postgres to the stack, wired up async SQLAlchemy 2.0, and got Alembic gene
 
 \- \[x] Day 3 — PostgreSQL + async SQLAlchemy + Alembic
 
-\- \[ ] Day 4 — Full schema design
+\- \[x] Day 4 — Full schema design
 
 \- \[ ] Day 5 — Repository Pattern + Clean Architecture
 

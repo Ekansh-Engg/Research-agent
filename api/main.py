@@ -33,11 +33,10 @@ from core.db import get_db
 from repositories.user_repository import create_user, get_user_by_email
 
 
+from services.user_service import get_or_create_user
+
+
 @app.post("/test-create-user")
 async def test_create_user(email: str, db: AsyncSession = Depends(get_db)):
-    existing = await get_user_by_email(db, email)
-    if existing:
-        return {"created": False, "id": str(existing.id), "email": existing.email}
-
-    user = await create_user(db, email)
-    return {"created": True, "id": str(user.id), "email": user.email}
+    user, was_created = await get_or_create_user(db, email)
+    return {"created": was_created, "id": str(user.id), "email": user.email}

@@ -47,6 +47,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  worker:
+    build: .
+    command: celery -A workers.celery_app worker --loglevel=info --pool=solo
+    volumes:
+      - ./api:/app/api
+      - ./core:/app/core
+      - ./services:/app/services
+      - ./repositories:/app/repositories
+      - ./schemas:/app/schemas
+      - ./workers:/app/workers
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/research_agent
+      - REDIS_URL=redis://redis:6379/0
 
 volumes:
   pgdata:

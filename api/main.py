@@ -10,6 +10,10 @@ from repositories.user_repository import create_user, get_user_by_email
 from services.user_service import get_or_create_user
 from core.security import get_current_user_id
 from core.cache import cache_get, cache_set
+from celery.result import AsyncResult
+
+from workers.celery_app import celery_app
+from workers.tasks import simulate_long_task
 
 
 app=FastAPI(title="Research agent API")
@@ -50,3 +54,20 @@ async def me(user_id: str = Depends(get_current_user_id)):
 
     await cache_set(cache_key, {"user_id": user_id}, ttl_seconds=30)
     return {"user_id": user_id, "source": "db"}
+
+
+
+@app.post("/trigger-task")
+async def trigger_task(duration: int = 5):
+    task = simulate_long_task.delay(duration)
+    return {"job_id": task.id}
+
+
+@app.get("/task-status/{job_id}")
+async def task_status(job_id: str):
+    result = AsyncResult(job_id, app=celery_app)
+    return {
+        "job_id": job_id,
+        "status": result.status,
+        "result": result.result if result.ready() else None,
+    }

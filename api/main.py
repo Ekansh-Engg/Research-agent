@@ -4,6 +4,12 @@ import asyncio
 from fastapi import Depends
 from core.dependencies import get_settings
 from core.config import Settings
+from sqlalchemy.ext.asyncio import AsyncSession
+from core.db import get_db
+from repositories.user_repository import create_user, get_user_by_email
+from services.user_service import get_or_create_user
+from core.security import get_current_user_id
+
 
 
 app=FastAPI(title="Research agent API")
@@ -27,16 +33,11 @@ async def slow_async():
 async def config_check(settings: Settings = Depends(get_settings)):
     return {"app_name": settings.app_name, "environment": settings.environment}
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.db import get_db
-from repositories.user_repository import create_user, get_user_by_email
-
-
-from services.user_service import get_or_create_user
-
-
 @app.post("/test-create-user")
 async def test_create_user(email: str, db: AsyncSession = Depends(get_db)):
     user, was_created = await get_or_create_user(db, email)
     return {"created": was_created, "id": str(user.id), "email": user.email}
+
+@app.get("/me")
+async def me(user_id: str = Depends(get_current_user_id)):
+    return {"user_id": user_id}

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     app_name: str = "Research Agent API"
     environment: str = "development"
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/research_agent"
+    clerk_jwks_url: str = ""
+    clerk_issuer: str = ""
 
 
 settings = Settings()

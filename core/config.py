@@ -9,6 +9,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/research_agent"
     clerk_jwks_url: str = ""
     clerk_issuer: str = ""
-
+    redis_url: str = "redis://localhost:6379/0"
 
 settings = Settings()

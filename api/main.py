@@ -9,7 +9,7 @@ from core.db import get_db
 from repositories.user_repository import create_user, get_user_by_email
 from services.user_service import get_or_create_user
 from core.security import get_current_user_id
-
+from core.cache import cache_get, cache_set
 
 
 app=FastAPI(title="Research agent API")
@@ -38,6 +38,15 @@ async def test_create_user(email: str, db: AsyncSession = Depends(get_db)):
     user, was_created = await get_or_create_user(db, email)
     return {"created": was_created, "id": str(user.id), "email": user.email}
 
+
+
+
 @app.get("/me")
 async def me(user_id: str = Depends(get_current_user_id)):
-    return {"user_id": user_id}
+    cache_key = f"user_claims:{user_id}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        return {"user_id": cached["user_id"], "source": "cache"}
+
+    await cache_set(cache_key, {"user_id": user_id}, ttl_seconds=30)
+    return {"user_id": user_id, "source": "db"}

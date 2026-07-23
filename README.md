@@ -200,6 +200,35 @@ Built out the complete data model the rest of the project writes to — the tabl
 
 **False alarm caught and resolved — worth documenting because of how convincing it looked.** Early `\dt` output through `docker exec` appeared to be missing the `users` and `reports` tables entirely — looked like a serious data-loss bug. Turned out to be `psql`'s interactive pager silently truncating output mid-list (`--More--`), not an actual problem. Confirmed both tables were fully intact via targeted `\d users` / `\d reports` checks and `alembic history` (which showed a clean, linear, unbroken migration chain). Fixed the pager truncation with `\pset pager off` for future checks. Genuinely useful lesson: verify with a targeted query before concluding data is missing — an output-rendering quirk can look identical to real corruption if you don't dig one level deeper.
 
+### Day 5 — Repository Pattern + Service Layer, Formalized
+
+Formalized the layering discipline before the codebase grew past the point where retrofitting it would be painful — routes call services, services call repositories, never skipping a layer.
+
+**Refactored `/test-create-user` to stop calling the repository directly.** Built `services/user_service.py` with `get_or_create_user`, holding the "check existence, otherwise create" decision — a business rule, not a raw data operation, so it belongs in the service layer, not the repository or the route. The route is now thinner, delegating the decision instead of containing it.
+
+**Proved the service is testable in complete isolation.** Wrote two unit tests using mocked repository functions (`unittest.mock.patch` on `get_user_by_email` / `create_user`) — neither test touches Postgres or Docker, both run in milliseconds. This is the actual payoff of the Repository Pattern: if a service test fails, the bug is definitely in decision logic, not buried somewhere in the database layer.
+
+Confirmed the HTTP path still behaves identically post-refactor — same create-then-dedupe round trip as Day 3, just now flowing through the service layer correctly.
+
+### Day 6 — Clerk JWT Authentication + Protected Routes
+
+Wired up real backend authentication — every route from here forward can require a verified identity, not just an unchecked `email` query param.
+
+Built `core/security.py`: a cached `PyJWKClient` (fetches and caches Clerk's public signing keys, avoiding a re-fetch on every request), RS256 signature verification, and issuer validation. Added a protected `/me` route that extracts the verified `user_id` from the JWT's `sub` claim.
+
+**Bug — Docker Compose's `.env` handling and Pydantic Settings' `.env` handling are two separate mechanisms that don't automatically talk to each other.** Setting `CLERK_JWKS_URL` and `CLERK_ISSUER` in the host's `.env` file didn't make them visible inside the container — Compose only auto-reads `.env` for variable *substitution within the compose file itself* (the `${VAR}` syntax), not for automatically injecting arbitrary host env vars into a container's environment. The route crashed with `PyJWKClientError: Invalid JWKS URI scheme ''`, since `settings.clerk_jwks_url` resolved to an empty string at runtime. Fixed by explicitly listing both variables in the `api` service's `environment:` block using `${CLERK_JWKS_URL}` substitution — the same pattern `DATABASE_URL` had used since Day 3, which is exactly why this hadn't surfaced as a bug earlier: `DATABASE_URL` was hardcoded directly in Compose, never actually relying on host `.env` passthrough at all.
+
+Verified end-to-end with a real Clerk-issued session token, pulled from the `__session` browser cookie after logging in via Clerk's hosted sign-in page (no frontend built yet) — confirmed `/me` correctly returns a 401 with no token and the real verified `user_id` with a valid one.
+
+### Day 7 — Redis Basics + Week 1 Revision
+
+Added Redis to the stack and built a small cache wrapper with mandatory TTLs, then used the rest of the day as a full cold-start test of everything built across Week 1.
+
+**Bug — dependency cycle from a misplaced YAML block.** Pasted the `depends_on`/`environment` block intended for the `api` service one indentation level too high, landing it inside the `redis` service definition instead — creating a literal `redis -> redis` self-dependency. Docker's error (`dependency cycle detected: redis -> redis`) named the symptom but not the location; had to read the full `docker-compose.yml` line by line to find where the block had actually landed. Fixed by moving it to the correct service.
+
+**Cache correctness proven with real hit/miss/expiry behavior**, not just code review: first call to the cached `/me` route returned `"source":"db"`, an immediate second call (same `user_id`, well within the 30s TTL) returned `"source":"cache"` — confirming Redis storage/retrieval keyed on `user_id`, independent of which specific (short-lived) Clerk token was used to authenticate each call.
+
+**Week 1 cold-start verification — the actual point of the day.** Ran `docker compose down -v` (wiping both the Postgres and Redis named volumes) followed by `docker compose up --build` and `alembic upgrade head` against a completely fresh database. Re-verified every endpoint built across the week (`/health`, `/config-check`, `/test-create-user`, `/me`) against that clean slate. Everything passed identically to how it behaved on the original machine state — proof that the README's setup instructions are genuinely sufficient for a stranger cloning the repo, not just a description of steps that happened to work once during initial development.
 \## Roadmap
 
 
@@ -212,11 +241,11 @@ Built out the complete data model the rest of the project writes to — the tabl
 
 \- \[x] Day 4 — Full schema design
 
-\- \[ ] Day 5 — Repository Pattern + Clean Architecture
+\- \[x] Day 5 — Repository Pattern + Clean Architecture
 
-\- \[ ] Day 6 — Clerk authentication + JWT middleware
+\- \[x] Day 6 — Clerk authentication + JWT middleware
 
-\- \[ ] Day 7 — Redis + Week 1 revision
+\- \[x] Day 7 — Redis + Week 1 revision
 
 \- \[ ] Day 8 — Celery background jobs
 

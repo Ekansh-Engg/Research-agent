@@ -1,11 +1,12 @@
 import uuid
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import ForeignKey, JSON, String, Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
-
+def _naive_utc_now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 class Base(DeclarativeBase):
     pass
 
@@ -16,7 +17,7 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     org_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)
 
 
 
@@ -36,7 +37,7 @@ class Org(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)
 
 
 class User(Base):
@@ -47,7 +48,7 @@ class User(Base):
     org_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("orgs.id", ondelete="SET NULL"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)
 
 
 class AgentRun(Base):
@@ -62,7 +63,7 @@ class AgentRun(Base):
     )
     cost_usd: Mapped[float] = mapped_column(default=0.0)
     iteration_count: Mapped[int] = mapped_column(default=0)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)
 
     steps: Mapped[list["AgentStep"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
@@ -83,7 +84,7 @@ class AgentStep(Base):
     tool_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     input: Mapped[dict] = mapped_column(JSON, default=dict)
     output: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)
 
     run: Mapped["AgentRun"] = relationship(back_populates="steps")
 
@@ -97,7 +98,7 @@ class Report(Base):
     )
     content: Mapped[str] = mapped_column(String)
     citations: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)
 
     run: Mapped["AgentRun"] = relationship(back_populates="report")
 
@@ -109,4 +110,4 @@ class AuditLog(Base):
     actor_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     action: Mapped[str] = mapped_column(String(100))
     target: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=_naive_utc_now)

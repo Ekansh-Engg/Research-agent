@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+    tavily_api_key: str = ""
 
 
 settings = Settings()

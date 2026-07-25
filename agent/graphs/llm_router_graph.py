@@ -5,6 +5,7 @@ from langgraph.graph import StateGraph, END
 from agent.llm import get_llm
 from agent.graphs.planner_node import generate_plan
 from agent.schemas import RouterDecision, ToolChoice
+from agent.tools.web_search import web_search
 
 
 class StepResult(TypedDict):
@@ -37,6 +38,10 @@ Results from prior steps so far:
 """
 
 
+
+
+# ... (RouterDecision, ToolChoice, ROUTER_PROMPT unchanged from Day 14)
+
 async def router_node(state: AgentState) -> dict:
     llm = get_llm()
     structured_llm = llm.with_structured_output(RouterDecision)
@@ -59,7 +64,7 @@ async def router_node(state: AgentState) -> dict:
         decision = RouterDecision(tool=ToolChoice.NONE, reasoning="fallback due to error")
 
     if decision.tool == ToolChoice.WEB_SEARCH:
-        result_text = f"[fake search results for: {current_step}]"
+        result_text = await web_search(current_step)
     else:
         result_text = f"[reasoned directly, no tool needed: {current_step}]"
 
@@ -81,15 +86,36 @@ def has_more_steps(state: AgentState) -> str:
     return "done"
 
 
-def synthesize_node(state: AgentState) -> dict:
-    summary_lines = [
-        f"- {r['step']} (via {r['tool_used']}): {r['result']}" for r in state["step_results"]
-    ]
-    summary = "\n".join(summary_lines)
-    answer = f"Query: {state['query']}\n\nSteps taken:\n{summary}\n\nFinal answer synthesized from the above."
+SYNTHESIS_PROMPT = """You are synthesizing research findings into a clear, direct answer to the original query.
+
+Original query: {query}
+
+Research findings:
+{findings}
+
+Write a clear, well-organized answer to the original query based on these findings. If some findings are irrelevant or unreliable, use judgment and note any gaps rather than presenting uncertain information as fact.
+"""
+
+
+async def synthesize_node(state: AgentState) -> dict:
+    llm = get_llm()
+
+    findings = "\n\n".join(
+        f"Step: {r['step']}\nTool used: {r['tool_used']}\nResult: {r['result']}"
+        for r in state["step_results"]
+    )
+
+    prompt = SYNTHESIS_PROMPT.format(query=state["query"], findings=findings)
+
+    try:
+        response = await llm.ainvoke(prompt)
+        answer = response.content
+    except Exception as e:
+        print(f"Synthesis failed: {e}")
+        # Fail safe: fall back to the raw findings dump rather than nothing at all
+        answer = f"Synthesis failed, showing raw findings:\n\n{findings}"
+
     return {"final_answer": answer}
-
-
 def build_agent_graph():
     graph = StateGraph(AgentState)
 

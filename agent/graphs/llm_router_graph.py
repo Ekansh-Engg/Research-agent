@@ -4,81 +4,109 @@ from langgraph.graph import StateGraph, END
 
 from agent.llm import get_llm
 from agent.graphs.planner_node import generate_plan
+from agent.schemas import RouterDecision, ToolChoice
+
+
+class StepResult(TypedDict):
+    step: str
+    tool_used: str
+    result: str
 
 
 class AgentState(TypedDict):
     query: str
     plan_steps: list[str]
-    needs_tool: bool
-    tool_result: str
+    current_step_index: int
+    step_results: list[StepResult]
     final_answer: str
 
 
 async def plan_node(state: AgentState) -> dict:
     plan = await generate_plan(state["query"])
-    return {"plan_steps": plan.steps}
+    return {"plan_steps": plan.steps, "current_step_index": 0, "step_results": []}
 
 
-async def decide_node(state: AgentState) -> dict:
+ROUTER_PROMPT = """Given this research step, decide whether it needs a web search or can be answered from reasoning alone.
+
+If prior steps have already gathered the information this step needs, and this step is really about analyzing, comparing, or summarizing that information, choose 'none' -- reasoning over already-gathered information doesn't need a new search.
+
+Step: {step}
+
+Results from prior steps so far:
+{prior_results}
+"""
+
+
+async def router_node(state: AgentState) -> dict:
     llm = get_llm()
+    structured_llm = llm.with_structured_output(RouterDecision)
 
-    # For now, still deciding on the whole query -- Day 14 will make this
-    # decide per plan step, not the query as a whole.
-    prompt = (
-        "You are deciding whether a user query requires an external tool "
-        "(like a web search) to answer, or whether it can be answered directly "
-        "from general knowledge.\n\n"
-        f"Query: {state['query']}\n\n"
-        "Respond with exactly one word: TOOL or DIRECT."
-    )
+    current_step = state["plan_steps"][state["current_step_index"]]
+
+    if state["step_results"]:
+        prior_results = "\n".join(
+            f"- {r['step']}: {r['result']}" for r in state["step_results"]
+        )
+    else:
+        prior_results = "(none yet -- this is the first step)"
+
+    prompt = ROUTER_PROMPT.format(step=current_step, prior_results=prior_results)
 
     try:
-        response = await llm.ainvoke(prompt)
-        decision = response.content.strip().upper()
-        needs_tool = decision == "TOOL"
+        decision = await structured_llm.ainvoke(prompt)
     except Exception as e:
-        print(f"LLM call failed: {e}")
-        needs_tool = False
+        print(f"Router decision failed: {e}")
+        decision = RouterDecision(tool=ToolChoice.NONE, reasoning="fallback due to error")
 
-    return {"needs_tool": needs_tool}
+    if decision.tool == ToolChoice.WEB_SEARCH:
+        result_text = f"[fake search results for: {current_step}]"
+    else:
+        result_text = f"[reasoned directly, no tool needed: {current_step}]"
+
+    step_result: StepResult = {
+        "step": current_step,
+        "tool_used": decision.tool.value,
+        "result": result_text,
+    }
+
+    return {
+        "step_results": state["step_results"] + [step_result],
+        "current_step_index": state["current_step_index"] + 1,
+    }
 
 
-def route_decision(state: AgentState) -> str:
-    return "use_tool" if state["needs_tool"] else "answer_directly"
-
-
-def use_tool_node(state: AgentState) -> dict:
-    return {"tool_result": f"[fake search results for: {state['query']}]"}
+def has_more_steps(state: AgentState) -> str:
+    if state["current_step_index"] < len(state["plan_steps"]):
+        return "continue"
+    return "done"
 
 
 def synthesize_node(state: AgentState) -> dict:
-    plan_summary = " -> ".join(state.get("plan_steps", []))
-    if state.get("tool_result"):
-        answer = f"Plan: {plan_summary}\n\nBased on search results, here's the answer to '{state['query']}'."
-    else:
-        answer = f"Plan: {plan_summary}\n\nDirect answer to '{state['query']}' without needing a tool."
+    summary_lines = [
+        f"- {r['step']} (via {r['tool_used']}): {r['result']}" for r in state["step_results"]
+    ]
+    summary = "\n".join(summary_lines)
+    answer = f"Query: {state['query']}\n\nSteps taken:\n{summary}\n\nFinal answer synthesized from the above."
     return {"final_answer": answer}
 
 
-def build_llm_router_graph():
+def build_agent_graph():
     graph = StateGraph(AgentState)
 
     graph.add_node("plan", plan_node)
-    graph.add_node("decide", decide_node)
-    graph.add_node("use_tool", use_tool_node)
+    graph.add_node("router", router_node)
     graph.add_node("synthesize", synthesize_node)
 
     graph.set_entry_point("plan")
-    graph.add_edge("plan", "decide")
+    graph.add_edge("plan", "router")
     graph.add_conditional_edges(
-        "decide",
-        route_decision,
+        "router",
+        has_more_steps,
         {
-            "use_tool": "use_tool",
-            "answer_directly": "synthesize",
+            "continue": "router",
+            "done": "synthesize",
         },
     )
-    graph.add_edge("use_tool", "synthesize")
     graph.add_edge("synthesize", END)
 
     return graph.compile()

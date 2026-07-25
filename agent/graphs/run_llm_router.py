@@ -6,15 +6,19 @@ from agent.graphs.llm_router_graph import build_llm_router_graph
 async def main():
     graph = build_llm_router_graph()
 
-    result1 = await graph.ainvoke(
-        {"query": "search for the latest news on AI regulation", "needs_tool": False, "tool_result": "", "final_answer": ""}
-    )
-    print("Query 1:", result1)
+    queries = [
+        "Compare the Q3 pricing strategies of our top 3 competitors",
+        "What is the capital of France",
+        "Summarize recent sentiment trends about electric vehicles on social media",
+    ]
 
-    result2 = await graph.ainvoke(
-        {"query": "what is the capital of France", "needs_tool": False, "tool_result": "", "final_answer": ""}
-    )
-    print("Query 2:", result2)
+    for query in queries:
+        result = await graph.ainvoke(
+            {"query": query, "plan_steps": [], "needs_tool": False, "tool_result": "", "final_answer": ""}
+        )
+        print(f"\nQuery: {query}")
+        print(f"Plan steps: {result['plan_steps']}")
+        print(f"Final answer: {result['final_answer']}")
 
 
 if __name__ == "__main__":

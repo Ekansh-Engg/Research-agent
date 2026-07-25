@@ -1,8 +1,9 @@
+import time
 from typing import TypedDict
 
 from langgraph.graph import StateGraph, END
 
-from agent.llm import get_llm
+from agent.llm import get_llm, estimate_cost
 from agent.graphs.planner_node import generate_plan
 from agent.schemas import RouterDecision, ToolChoice
 from agent.tools.web_search import web_search
@@ -20,11 +21,29 @@ class AgentState(TypedDict):
     current_step_index: int
     step_results: list[StepResult]
     final_answer: str
+    iteration_count: int
+    estimated_cost: float
+    start_time: float
+    stopped_early: bool
+    stop_reason: str
 
+
+MAX_ITERATIONS = 8
+MAX_COST_USD = 0.10
+MAX_RUNTIME_SECONDS = 60
 
 async def plan_node(state: AgentState) -> dict:
     plan = await generate_plan(state["query"])
-    return {"plan_steps": plan.steps, "current_step_index": 0, "step_results": []}
+    return {
+        "plan_steps": plan.steps,
+        "current_step_index": 0,
+        "step_results": [],
+        "iteration_count": 0,
+        "estimated_cost": 0.0,
+        "start_time": time.time(),
+        "stopped_early": False,
+        "stop_reason": "",
+    }
 
 
 ROUTER_PROMPT = """Given this research step, decide whether it needs a web search or can be answered from reasoning alone.
@@ -38,11 +57,32 @@ Results from prior steps so far:
 """
 
 
-
-
-# ... (RouterDecision, ToolChoice, ROUTER_PROMPT unchanged from Day 14)
-
 async def router_node(state: AgentState) -> dict:
+    # --- Circuit breaker checks, before doing any real work this iteration ---
+    elapsed = time.time() - state["start_time"]
+
+    if state["iteration_count"] >= MAX_ITERATIONS:
+        return {
+            "stopped_early": True,
+            "stop_reason": f"Max iterations ({MAX_ITERATIONS}) reached",
+            "current_step_index": len(state["plan_steps"]),  # force loop exit
+        }
+
+    if state["estimated_cost"] >= MAX_COST_USD:
+        return {
+            "stopped_early": True,
+            "stop_reason": f"Max cost (${MAX_COST_USD}) reached",
+            "current_step_index": len(state["plan_steps"]),
+        }
+
+    if elapsed >= MAX_RUNTIME_SECONDS:
+        return {
+            "stopped_early": True,
+            "stop_reason": f"Max runtime ({MAX_RUNTIME_SECONDS}s) reached",
+            "current_step_index": len(state["plan_steps"]),
+        }
+
+    # --- Normal step execution ---
     llm = get_llm()
     structured_llm = llm.with_structured_output(RouterDecision)
 
@@ -59,9 +99,14 @@ async def router_node(state: AgentState) -> dict:
 
     try:
         decision = await structured_llm.ainvoke(prompt)
+        # Rough token estimate: real usage metadata varies by provider response shape;
+        # using a simple word-count proxy here rather than depending on provider-specific fields.
+        approx_tokens = len(prompt.split()) + len(str(decision).split())
+        step_cost = estimate_cost(approx_tokens, 50)
     except Exception as e:
         print(f"Router decision failed: {e}")
         decision = RouterDecision(tool=ToolChoice.NONE, reasoning="fallback due to error")
+        step_cost = 0.0
 
     if decision.tool == ToolChoice.WEB_SEARCH:
         result_text = await web_search(current_step)
@@ -77,6 +122,8 @@ async def router_node(state: AgentState) -> dict:
     return {
         "step_results": state["step_results"] + [step_result],
         "current_step_index": state["current_step_index"] + 1,
+        "iteration_count": state["iteration_count"] + 1,
+        "estimated_cost": state["estimated_cost"] + step_cost,
     }
 
 
@@ -85,13 +132,14 @@ def has_more_steps(state: AgentState) -> str:
         return "continue"
     return "done"
 
-
 SYNTHESIS_PROMPT = """You are synthesizing research findings into a clear, direct answer to the original query.
 
 Original query: {query}
 
 Research findings:
 {findings}
+
+{early_stop_note}
 
 Write a clear, well-organized answer to the original query based on these findings. If some findings are irrelevant or unreliable, use judgment and note any gaps rather than presenting uncertain information as fact.
 """
@@ -103,19 +151,30 @@ async def synthesize_node(state: AgentState) -> dict:
     findings = "\n\n".join(
         f"Step: {r['step']}\nTool used: {r['tool_used']}\nResult: {r['result']}"
         for r in state["step_results"]
-    )
+    ) or "(no steps were completed)"
 
-    prompt = SYNTHESIS_PROMPT.format(query=state["query"], findings=findings)
+    early_stop_note = ""
+    if state.get("stopped_early"):
+        early_stop_note = (
+            f"NOTE: This research was stopped early ({state['stop_reason']}) "
+            "before the full plan could be completed. Be explicit in your answer "
+            "that this is a partial result, not a complete one."
+        )
+
+    prompt = SYNTHESIS_PROMPT.format(
+        query=state["query"], findings=findings, early_stop_note=early_stop_note
+    )
 
     try:
         response = await llm.ainvoke(prompt)
         answer = response.content
     except Exception as e:
         print(f"Synthesis failed: {e}")
-        # Fail safe: fall back to the raw findings dump rather than nothing at all
         answer = f"Synthesis failed, showing raw findings:\n\n{findings}"
 
     return {"final_answer": answer}
+
+
 def build_agent_graph():
     graph = StateGraph(AgentState)
 

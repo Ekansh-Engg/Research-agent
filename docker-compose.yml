@@ -21,6 +21,8 @@ services:
       - CLERK_JWKS_URL=${CLERK_JWKS_URL}
       - CLERK_ISSUER=${CLERK_ISSUER}
       - REDIS_URL=redis://redis:6379/0
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL}
 
   db:
     image: postgres:16-alpine
@@ -65,6 +67,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/research_agent
       - REDIS_URL=redis://redis:6379/0
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL}
 
 volumes:
   pgdata:

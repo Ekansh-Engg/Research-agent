@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -10,5 +9,8 @@ class Settings(BaseSettings):
     clerk_jwks_url: str = ""
     clerk_issuer: str = ""
     redis_url: str = "redis://localhost:6379/0"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+
 
 settings = Settings()

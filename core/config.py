@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     tavily_api_key: str = ""
+    readonly_database_url: str = "postgresql+asyncpg://readonly_agent:readonly_pass@localhost:5432/research_agent"
 
 
 settings = Settings()

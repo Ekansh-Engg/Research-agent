@@ -7,7 +7,7 @@ from agent.llm import get_llm, estimate_cost
 from agent.graphs.planner_node import generate_plan
 from agent.schemas import RouterDecision, ToolChoice
 from agent.tools.web_search import web_search
-
+from agent.tools.sql_query import sql_query
 
 class StepResult(TypedDict):
     step: str
@@ -46,16 +46,21 @@ async def plan_node(state: AgentState) -> dict:
     }
 
 
-ROUTER_PROMPT = """Given this research step, decide whether it needs a web search or can be answered from reasoning alone.
+ROUTER_PROMPT = """Given this research step, decide which tool (if any) is needed:
+- 'web_search': for current events, external information, or anything not in our own database
+- 'sql_query': for questions about our own agent run history, stored in Postgres tables:
+    agent_runs (id, org_id, user_id, query, status, cost_usd, iteration_count, created_at)
+      -- status is an enum with these EXACT uppercase values: 'PENDING', 'RUNNING', 'COMPLETED', 'FAILED'
+    agent_steps (id, run_id, step_type, tool_name, created_at)
+- 'none': if prior steps already gathered what's needed, or this step is pure reasoning/comparison
 
-If prior steps have already gathered the information this step needs, and this step is really about analyzing, comparing, or summarizing that information, choose 'none' -- reasoning over already-gathered information doesn't need a new search.
+If choosing 'sql_query', also generate the exact SELECT statement to run in the 'sql' field. Only use SELECT statements -- never write, update, or delete data. Match enum values exactly as specified above, including case.
 
 Step: {step}
 
 Results from prior steps so far:
 {prior_results}
 """
-
 
 async def router_node(state: AgentState) -> dict:
     # --- Circuit breaker checks, before doing any real work this iteration ---
@@ -110,6 +115,8 @@ async def router_node(state: AgentState) -> dict:
 
     if decision.tool == ToolChoice.WEB_SEARCH:
         result_text = await web_search(current_step)
+    elif decision.tool == ToolChoice.SQL_QUERY:
+        result_text = await sql_query(decision.sql)
     else:
         result_text = f"[reasoned directly, no tool needed: {current_step}]"
 

@@ -11,9 +11,11 @@ class Plan(BaseModel):
 
 class ToolChoice(str, Enum):
     WEB_SEARCH = "web_search"
+    SQL_QUERY = "sql_query"
     NONE = "none"
 
 
 class RouterDecision(BaseModel):
-    tool: ToolChoice = Field(description="Which tool to use for this step, or 'none' if it can be answered from reasoning alone")
+    tool: ToolChoice = Field(description="Which tool to use for this step")
     reasoning: str = Field(description="One sentence explaining why this tool choice fits this step")
+    sql: str = Field(default="", description="The SELECT statement to run, only if tool is sql_query")

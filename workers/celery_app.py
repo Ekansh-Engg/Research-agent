@@ -6,7 +6,7 @@ celery_app = Celery(
     "research_agent",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["workers.tasks"],
+    include=["workers.tasks", "workers.agent_tasks"],
 )
 
 celery_app.conf.update(

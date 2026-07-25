@@ -26,6 +26,7 @@ COPY services ./services
 COPY repositories ./repositories
 COPY schemas ./schemas
 COPY workers ./workers
+COPY agent ./agent
 
 ENV PATH="/app/.venv/bin:$PATH"
 

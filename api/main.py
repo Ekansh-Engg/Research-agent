@@ -15,6 +15,8 @@ from celery.result import AsyncResult
 from workers.celery_app import celery_app
 from workers.tasks import simulate_long_task
 
+from workers.agent_tasks import run_research_agent
+
 
 app=FastAPI(title="Research agent API")
 
@@ -65,6 +67,22 @@ async def trigger_task(duration: int = 5):
 
 @app.get("/task-status/{job_id}")
 async def task_status(job_id: str):
+    result = AsyncResult(job_id, app=celery_app)
+    return {
+        "job_id": job_id,
+        "status": result.status,
+        "result": result.result if result.ready() else None,
+    }
+
+
+@app.post("/agent/run")
+async def start_agent_run(query: str):
+    task = run_research_agent.delay(query)
+    return {"job_id": task.id}
+
+
+@app.get("/agent/run/{job_id}")
+async def get_agent_run_status(job_id: str):
     result = AsyncResult(job_id, app=celery_app)
     return {
         "job_id": job_id,

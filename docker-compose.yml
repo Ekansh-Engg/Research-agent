@@ -10,7 +10,8 @@ services:
       - ./repositories:/app/repositories
       - ./schemas:/app/schemas
       - ./workers:/app/workers
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir api --reload-dir core --reload-dir repositories --reload-dir services --reload-dir schemas --reload-dir workers
+      - ./agent:/app/agent
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir api --reload-dir core --reload-dir repositories --reload-dir services --reload-dir schemas --reload-dir workers --reload-dir agent
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +61,7 @@ services:
       - ./repositories:/app/repositories
       - ./schemas:/app/schemas
       - ./workers:/app/workers
+      - ./agent:/app/agent
     depends_on:
       db:
         condition: service_healthy

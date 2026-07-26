@@ -12,8 +12,8 @@ class Plan(BaseModel):
 class ToolChoice(str, Enum):
     WEB_SEARCH = "web_search"
     SQL_QUERY = "sql_query"
+    RAG_RETRIEVAL = "rag_retrieval"
     NONE = "none"
-
 
 class RouterDecision(BaseModel):
     tool: ToolChoice = Field(description="Which tool to use for this step")

@@ -16,7 +16,10 @@ from workers.celery_app import celery_app
 from workers.tasks import simulate_long_task
 
 from workers.agent_tasks import run_research_agent
-
+from repositories.user_repository import get_user_by_email, create_user
+from repositories.user_repository import get_user_by_email, create_user
+from core.models import Org
+from sqlalchemy import select
 
 app=FastAPI(title="Research agent API")
 
@@ -75,11 +78,39 @@ async def task_status(job_id: str):
     }
 
 
-@app.post("/agent/run")
-async def start_agent_run(query: str):
-    task = run_research_agent.delay(query)
-    return {"job_id": task.id}
 
+
+
+async def _get_or_create_placeholder_org(db: AsyncSession) -> "Org":
+    result = await db.execute(select(Org).where(Org.name == "Default Org"))
+    org = result.scalar_one_or_none()
+    if org:
+        return org
+    org = Org(name="Default Org")
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
+@app.post("/agent/run")
+async def start_agent_run(
+    query: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    user = await get_user_by_email(db, f"{user_id}@clerk-placeholder.local")
+    if not user:
+        user = await create_user(db, f"{user_id}@clerk-placeholder.local")
+
+    if not user.org_id:
+        org = await _get_or_create_placeholder_org(db)
+        user.org_id = org.id
+        await db.commit()
+        await db.refresh(user)
+
+    task = run_research_agent.delay(query, str(user.org_id), str(user.id))
+    return {"job_id": task.id}
 
 @app.get("/agent/run/{job_id}")
 async def get_agent_run_status(job_id: str):
@@ -89,3 +120,4 @@ async def get_agent_run_status(job_id: str):
         "status": result.status,
         "result": result.result if result.ready() else None,
     }
+

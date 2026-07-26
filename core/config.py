@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     tavily_api_key: str = ""
     readonly_database_url: str = "postgresql+asyncpg://readonly_agent:readonly_pass@localhost:5432/research_agent"
+    langsmith_api_key: str = ""
+    langsmith_project: str = "research-agent-dev"
+    langsmith_tracing: bool = False
 
 
 settings = Settings()

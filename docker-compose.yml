@@ -28,6 +28,9 @@ services:
       - GROQ_MODEL=${GROQ_MODEL}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - READONLY_DATABASE_URL=postgresql+asyncpg://readonly_agent:readonly_pass@db:5432/research_agent
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING}
 
   db:
     image: postgres:16-alpine
@@ -80,6 +83,9 @@ services:
       - GROQ_MODEL=${GROQ_MODEL}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - READONLY_DATABASE_URL=postgresql+asyncpg://readonly_agent:readonly_pass@db:5432/research_agent 
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING}
 
   qdrant:
     image: qdrant/qdrant:latest

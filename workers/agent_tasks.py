@@ -9,10 +9,11 @@ from core.config import settings
 from services.agent_run_service import persist_agent_run
 
 
-async def _run_and_persist(query: str, org_id: str, user_id: str) -> dict:
+async def _run_and_persist(query: str, org_id: str, user_id: str, job_id: str) -> dict:
     graph = build_agent_graph()
     result = await graph.ainvoke(
         {
+            "job_id": job_id,
             "query": query,
             "plan_steps": [],
             "current_step_index": 0,
@@ -63,6 +64,6 @@ async def _run_and_persist(query: str, org_id: str, user_id: str) -> dict:
     }
 
 
-@celery_app.task(name="run_research_agent")
-def run_research_agent(query: str, org_id: str, user_id: str) -> dict:
-    return asyncio.run(_run_and_persist(query, org_id, user_id))
+@celery_app.task(name="run_research_agent", bind=True)
+def run_research_agent(self, query: str, org_id: str, user_id: str) -> dict:
+    return asyncio.run(_run_and_persist(query, org_id, user_id, self.request.id))

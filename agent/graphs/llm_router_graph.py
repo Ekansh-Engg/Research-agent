@@ -9,6 +9,7 @@ from agent.schemas import RouterDecision, ToolChoice
 from agent.tools.web_search import web_search
 from agent.tools.sql_query import sql_query
 from agent.tools.rag.store import search_documents
+from core.pubsub import publish_progress
 
 class StepResult(TypedDict):
     step: str
@@ -16,7 +17,11 @@ class StepResult(TypedDict):
     result: str
 
 
+
+
+# Add a job_id field to AgentState so nodes know which channel to publish to
 class AgentState(TypedDict):
+    job_id: str
     query: str
     plan_steps: list[str]
     current_step_index: int
@@ -35,6 +40,10 @@ MAX_RUNTIME_SECONDS = 60
 
 async def plan_node(state: AgentState) -> dict:
     plan = await generate_plan(state["query"])
+    await publish_progress(state["job_id"], {
+        "event": "plan_generated",
+        "plan_steps": plan.steps,
+    })
     return {
         "plan_steps": plan.steps,
         "current_step_index": 0,
@@ -65,13 +74,21 @@ async def router_node(state: AgentState) -> dict:
     elapsed = time.time() - state["start_time"]
 
     if state["iteration_count"] >= MAX_ITERATIONS:
+        await publish_progress(state["job_id"], {
+            "event": "stopped_early",
+            "reason": f"Max iterations ({MAX_ITERATIONS}) reached",
+        })
         return {
             "stopped_early": True,
             "stop_reason": f"Max iterations ({MAX_ITERATIONS}) reached",
-            "current_step_index": len(state["plan_steps"]),  # force loop exit
+            "current_step_index": len(state["plan_steps"]),
         }
 
     if state["estimated_cost"] >= MAX_COST_USD:
+        await publish_progress(state["job_id"], {
+            "event": "stopped_early",
+            "reason": f"Max cost (${MAX_COST_USD}) reached",
+        })
         return {
             "stopped_early": True,
             "stop_reason": f"Max cost (${MAX_COST_USD}) reached",
@@ -79,6 +96,10 @@ async def router_node(state: AgentState) -> dict:
         }
 
     if elapsed >= MAX_RUNTIME_SECONDS:
+        await publish_progress(state["job_id"], {
+            "event": "stopped_early",
+            "reason": f"Max runtime ({MAX_RUNTIME_SECONDS}s) reached",
+        })
         return {
             "stopped_early": True,
             "stop_reason": f"Max runtime ({MAX_RUNTIME_SECONDS}s) reached",
@@ -126,6 +147,13 @@ async def router_node(state: AgentState) -> dict:
         "tool_used": decision.tool.value,
         "result": result_text,
     }
+
+    await publish_progress(state["job_id"], {
+        "event": "step_completed",
+        "step": current_step,
+        "tool_used": decision.tool.value,
+        "result_preview": result_text[:200],
+    })
 
     return {
         "step_results": state["step_results"] + [step_result],
@@ -179,6 +207,11 @@ async def synthesize_node(state: AgentState) -> dict:
     except Exception as e:
         print(f"Synthesis failed: {e}")
         answer = f"Synthesis failed, showing raw findings:\n\n{findings}"
+
+    await publish_progress(state["job_id"], {
+        "event": "run_completed",
+        "final_answer": answer,
+    })
 
     return {"final_answer": answer}
 

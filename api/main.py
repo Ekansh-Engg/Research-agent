@@ -1,5 +1,6 @@
-from fastapi import FastAPI,Depends, HTTPException
+from fastapi import FastAPI,Depends, HTTPException, WebSocket, WebSocketDisconnect
 import time
+import json
 import asyncio
 from fastapi import Depends
 from core.dependencies import get_settings
@@ -19,7 +20,7 @@ from sqlalchemy import select
 from uuid import UUID
 from schemas.agent_run import AgentRunDetail, AgentRunSummary
 from services.agent_run_service import get_run_detail, get_run_history
-
+from core.pubsub import subscribe_to_progress
 
 app=FastAPI(title="Research agent API")
 
@@ -153,3 +154,25 @@ async def get_run(run_id: UUID, db: AsyncSession = Depends(get_db)):
         steps=run.steps,
         report_content=run.report.content if run.report else None,
     )
+
+
+
+@app.websocket("/ws/agent/run/{job_id}")
+async def agent_run_progress_ws(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+    pubsub = await subscribe_to_progress(job_id)
+
+    try:
+        async for message in pubsub.listen():
+            if message["type"] != "message":
+                continue
+            await websocket.send_text(message["data"])
+            data = json.loads(message["data"])
+            if data.get("event") in ("run_completed", "stopped_early"):
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await pubsub.unsubscribe()
+        await pubsub.close()
+        await websocket.close()

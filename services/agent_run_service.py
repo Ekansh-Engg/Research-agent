@@ -1,6 +1,11 @@
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from repositories.agent_run_repository import get_agent_run_detail, list_agent_runs
 
 from core.models import RunStatus
 from repositories.agent_run_repository import (
@@ -42,3 +47,12 @@ async def persist_agent_run(
     await save_report(session, run.id, final_answer, citations)
 
     return run.id
+
+
+
+async def get_run_history(session: AsyncSession, org_id: UUID, limit: int, offset: int):
+    return await list_agent_runs(session, org_id, limit, offset)
+
+
+async def get_run_detail(session: AsyncSession, run_id: UUID):
+    return await get_agent_run_detail(session, run_id)

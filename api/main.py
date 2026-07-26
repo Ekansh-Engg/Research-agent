@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI,Depends, HTTPException
 import time
 import asyncio
 from fastapi import Depends
@@ -11,15 +11,15 @@ from services.user_service import get_or_create_user
 from core.security import get_current_user_id
 from core.cache import cache_get, cache_set
 from celery.result import AsyncResult
-
 from workers.celery_app import celery_app
 from workers.tasks import simulate_long_task
-
 from workers.agent_tasks import run_research_agent
-from repositories.user_repository import get_user_by_email, create_user
-from repositories.user_repository import get_user_by_email, create_user
 from core.models import Org
 from sqlalchemy import select
+from uuid import UUID
+from schemas.agent_run import AgentRunDetail, AgentRunSummary
+from services.agent_run_service import get_run_detail, get_run_history
+
 
 app=FastAPI(title="Research agent API")
 
@@ -121,3 +121,35 @@ async def get_agent_run_status(job_id: str):
         "result": result.result if result.ready() else None,
     }
 
+
+
+
+@app.get("/agent/runs", response_model=list[AgentRunSummary])
+async def list_runs(
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+    limit: int = 20,
+    offset: int = 0,
+):
+    user = await get_user_by_email(db, f"{user_id}@clerk-placeholder.local")
+    if not user or not user.org_id:
+        return []
+    runs = await get_run_history(db, user.org_id, limit, offset)
+    return runs
+
+
+@app.get("/agent/runs/{run_id}", response_model=AgentRunDetail)
+async def get_run(run_id: UUID, db: AsyncSession = Depends(get_db)):
+    run = await get_run_detail(db, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return AgentRunDetail(
+        id=run.id,
+        query=run.query,
+        status=run.status.value,
+        cost_usd=run.cost_usd,
+        iteration_count=run.iteration_count,
+        created_at=run.created_at,
+        steps=run.steps,
+        report_content=run.report.content if run.report else None,
+    )

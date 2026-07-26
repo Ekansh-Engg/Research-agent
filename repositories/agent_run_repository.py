@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models import AgentRun, AgentStep, Report, RunStatus
-
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 async def create_agent_run(
     session: AsyncSession, org_id: UUID, user_id: UUID, query: str
@@ -61,5 +62,29 @@ async def save_report(session: AsyncSession, run_id: UUID, content: str, citatio
 async def get_agent_run_with_steps(session: AsyncSession, run_id: UUID) -> AgentRun | None:
     result = await session.execute(
         select(AgentRun).where(AgentRun.id == run_id)
+    )
+    return result.scalar_one_or_none()
+
+
+
+
+async def list_agent_runs(
+    session: AsyncSession, org_id: UUID, limit: int = 20, offset: int = 0
+) -> list[AgentRun]:
+    result = await session.execute(
+        select(AgentRun)
+        .where(AgentRun.org_id == org_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(result.scalars().all())
+
+
+async def get_agent_run_detail(session: AsyncSession, run_id: UUID) -> AgentRun | None:
+    result = await session.execute(
+        select(AgentRun)
+        .where(AgentRun.id == run_id)
+        .options(selectinload(AgentRun.steps), selectinload(AgentRun.report))
     )
     return result.scalar_one_or_none()

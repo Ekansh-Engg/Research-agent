@@ -4,13 +4,16 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from agent.tools.rag.embeddings import embed_text
-
+from qdrant_client import AsyncQdrantClient
+from core.config import settings
 COLLECTION_NAME = "documents"
 VECTOR_SIZE = 384  # BAAI/bge-small-en-v1.5 output dimension
 
 
 def get_qdrant_client() -> AsyncQdrantClient:
-    return AsyncQdrantClient(url="http://qdrant:6333")
+    if settings.qdrant_api_key:
+        return AsyncQdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+    return AsyncQdrantClient(url=settings.qdrant_url)
 
 
 async def ensure_collection() -> None:

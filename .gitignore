@@ -13,4 +13,4 @@ wheels/
 .env
 .env.local
 
-test_ws.py
+test_ws.py.DS_Store

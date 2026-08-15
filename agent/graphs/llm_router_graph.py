@@ -1,7 +1,8 @@
 import time
 from typing import TypedDict
-
+import asyncio
 from langgraph.graph import StateGraph, END
+from agent.tools.timeout import with_timeout
 
 from agent.llm import get_llm, estimate_cost
 from agent.graphs.planner_node import generate_plan
@@ -38,7 +39,11 @@ MAX_ITERATIONS = 8
 MAX_COST_USD = 0.10
 MAX_RUNTIME_SECONDS = 60
 
+
 async def plan_node(state: AgentState) -> dict:
+    await asyncio.sleep(0.5)  # deliberate buffer: gives a client time to open its
+                               # WebSocket connection before the first progress event
+                               # publishes, since Redis Pub/Sub has no message replay
     plan = await generate_plan(state["query"])
     await publish_progress(state["job_id"], {
         "event": "plan_generated",
@@ -132,13 +137,19 @@ async def router_node(state: AgentState) -> dict:
         decision = RouterDecision(tool=ToolChoice.NONE, reasoning="fallback due to error")
         step_cost = 0.0
 
+    
+
+
     if decision.tool == ToolChoice.WEB_SEARCH:
-        result_text = await web_search(current_step)
+        result_text = await with_timeout(web_search(current_step))
     elif decision.tool == ToolChoice.SQL_QUERY:
-        result_text = await sql_query(decision.sql)
+        result_text = await with_timeout(sql_query(decision.sql))
     elif decision.tool == ToolChoice.RAG_RETRIEVAL:
-        results = await search_documents(current_step)
-        result_text = "\n".join(f"[{r['source']}] {r['text']} (relevance: {r['score']:.2f})" for r in results) or "[no relevant documents found]"
+        results = await with_timeout(search_documents(current_step))
+        if isinstance(results, str):  # timeout placeholder, not real results
+            result_text = results
+        else:
+            result_text = "\n".join(f"[{r['source']}] {r['text']} (relevance: {r['score']:.2f})" for r in results) or "[no relevant documents found]"
     else:
         result_text = f"[reasoned directly, no tool needed: {current_step}]"
 

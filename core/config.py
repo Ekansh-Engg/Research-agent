@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     langsmith_project: str = "research-agent-dev"
     langsmith_tracing: bool = False
+    qdrant_url: str = "http://qdrant:6333"
+    qdrant_api_key: str = ""
 
 
 settings = Settings()

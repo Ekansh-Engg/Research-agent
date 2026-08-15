@@ -21,6 +21,7 @@ from uuid import UUID
 from schemas.agent_run import AgentRunDetail, AgentRunSummary
 from services.agent_run_service import get_run_detail, get_run_history
 from core.pubsub import subscribe_to_progress
+from fastapi.middleware.cors import CORSMiddleware 
 
 app=FastAPI(title="Research agent API")
 
@@ -176,3 +177,12 @@ async def agent_run_progress_ws(websocket: WebSocket, job_id: str):
         await pubsub.unsubscribe()
         await pubsub.close()
         await websocket.close()
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # their actual Next.js dev origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

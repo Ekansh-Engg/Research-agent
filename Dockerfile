@@ -27,7 +27,8 @@ COPY repositories ./repositories
 COPY schemas ./schemas
 COPY workers ./workers
 COPY agent ./agent
-
+COPY alembic.ini ./alembic.ini
+COPY migrations ./migrations
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000

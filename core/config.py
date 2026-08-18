@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     clerk_issuer: str = ""
     redis_url: str = "redis://localhost:6379/0"
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     tavily_api_key: str = ""
     readonly_database_url: str = "postgresql+asyncpg://readonly_agent:readonly_pass@localhost:5432/research_agent"
     langsmith_api_key: str = ""

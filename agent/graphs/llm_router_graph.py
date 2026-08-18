@@ -41,9 +41,7 @@ MAX_RUNTIME_SECONDS = 60
 
 
 async def plan_node(state: AgentState) -> dict:
-    await asyncio.sleep(0.5)  # deliberate buffer: gives a client time to open its
-                               # WebSocket connection before the first progress event
-                               # publishes, since Redis Pub/Sub has no message replay
+     
     plan = await generate_plan(state["query"])
     await publish_progress(state["job_id"], {
         "event": "plan_generated",
@@ -62,11 +60,13 @@ async def plan_node(state: AgentState) -> dict:
 
 ROUTER_PROMPT = """Given this research step, decide which tool (if any) is needed:
 - 'web_search': for current events, external information, or anything not in our own data
-- 'sql_query': for questions about our own agent run history (agent_runs, agent_steps tables) -- status enum values are EXACT uppercase: 'PENDING', 'RUNNING', 'COMPLETED', 'FAILED'
+- 'sql_query': for questions about our own agent run history, stored in table agent_runs with EXACTLY these columns: id, org_id, user_id, query, status, cost_usd, iteration_count, created_at
+    -- IMPORTANT: the cost column is named "cost_usd", not "cost". Use the exact column names listed above, nothing else.
+    -- status is an enum with EXACT uppercase values: 'PENDING', 'RUNNING', 'COMPLETED', 'FAILED'
 - 'rag_retrieval': for questions about our own internal documents -- pricing memos, sales reviews, customer feedback, internal reports
 - 'none': if prior steps already gathered what's needed, or this step is pure reasoning/comparison
 
-If choosing 'sql_query', also generate the exact SELECT statement in the 'sql' field.
+If choosing 'sql_query', also generate the exact SELECT statement in the 'sql' field, using ONLY the exact column names listed above.
 
 Step: {step}
 

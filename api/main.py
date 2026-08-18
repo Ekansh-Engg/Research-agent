@@ -22,6 +22,7 @@ from schemas.agent_run import AgentRunDetail, AgentRunSummary
 from services.agent_run_service import get_run_detail, get_run_history
 from core.pubsub import subscribe_to_progress
 from fastapi.middleware.cors import CORSMiddleware 
+from core.pubsub import get_buffered_events, subscribe_to_progress
 
 app=FastAPI(title="Research agent API")
 
@@ -158,11 +159,28 @@ async def get_run(run_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 
+
+
+
 @app.websocket("/ws/agent/run/{job_id}")
 async def agent_run_progress_ws(websocket: WebSocket, job_id: str):
     await websocket.accept()
-    pubsub = await subscribe_to_progress(job_id)
 
+    # Replay anything that already happened before this client connected --
+    # Redis Pub/Sub itself has no memory, so we buffer separately for this.
+    buffered = await get_buffered_events(job_id)
+    already_finished = False
+    for payload in buffered:
+        await websocket.send_text(payload)
+        data = json.loads(payload)
+        if data.get("event") in ("run_completed", "stopped_early"):
+            already_finished = True
+
+    if already_finished:
+        await websocket.close()
+        return
+
+    pubsub = await subscribe_to_progress(job_id)
     try:
         async for message in pubsub.listen():
             if message["type"] != "message":
